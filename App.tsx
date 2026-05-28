@@ -1,28 +1,45 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet, AppState, AppStateStatus } from 'react-native';
-import * as SplashScreen from 'expo-splash-screen';
+import { StyleSheet, AppState, AppStateStatus, Platform } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AppProvider } from './src/store/AppContext';
 import { ThemeProvider } from './src/theme/ThemeContext';
 import { notificationService } from './src/services/notificationService';
 import { smsService } from './src/services/smsService';
 
-SplashScreen.preventAutoHideAsync();
+// Only import SplashScreen on native platforms
+let SplashScreen: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    SplashScreen = require('expo-splash-screen');
+  } catch (e) {
+    console.log('SplashScreen not available');
+  }
+}
 
 export default function App() {
-  const [appIsReady, setAppIsReady] = React.useState(false);
+  const [appIsReady, setAppIsReady] = useState(false);
 
   useEffect(() => {
     async function prepare() {
       try {
+        // Prevent splash screen from auto-hiding on native
+        if (SplashScreen) {
+          await SplashScreen.preventAutoHideAsync();
+        }
+
+        // Initialize services
         await notificationService.initialize();
-        await smsService.initialize();
         
-        // Handle app state changes for background monitoring
+        // Only initialize SMS on native platforms
+        if (Platform.OS !== 'web') {
+          await smsService.initialize();
+        }
+        
+        // Handle app state changes
         const subscription = AppState.addEventListener('change', handleAppStateChange);
         
         return () => {
@@ -39,16 +56,19 @@ export default function App() {
   }, []);
 
   const handleAppStateChange = (nextAppState: AppStateStatus) => {
-    if (nextAppState === 'active') {
+    if (nextAppState === 'active' && Platform.OS !== 'web') {
       smsService.startMonitoring();
-    } else if (nextAppState === 'background') {
+    } else if (nextAppState === 'background' && Platform.OS !== 'web') {
       smsService.continueBackgroundMonitoring();
     }
   };
 
   const onLayoutRootView = useCallback(async () => {
     if (appIsReady) {
-      await SplashScreen.hideAsync();
+      // Hide splash screen on native
+      if (SplashScreen) {
+        await SplashScreen.hideAsync();
+      }
     }
   }, [appIsReady]);
 
