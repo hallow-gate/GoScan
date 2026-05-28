@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "ShieldNet Secure",
+    "slug": "shieldnet-secure",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0e21"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shieldnet.secure",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "ShieldNet uses location to provide weather-based security alerts and threat intelligence."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0e21"
+      },
+      "package": "com.shieldnet.secure",
+      "permissions": [
+        "RECEIVE_SMS",
+        "READ_SMS",
+        "SEND_SMS",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "FOREGROUND_SERVICE",
+        "POST_NOTIFICATIONS"
+      ],
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": [
+      "expo-location",
+      "expo-notifications",
+      "expo-sms"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    }
+  }
+}
