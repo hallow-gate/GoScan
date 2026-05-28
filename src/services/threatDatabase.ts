@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import env from '../utils/env';
 
 interface ThreatReport {
   type: string;
@@ -13,71 +14,84 @@ interface ThreatReport {
 }
 
 class ThreatDatabase {
-  private readonly SIMILARITY_THRESHOLD = 0.6;
+  private readonly SIMILARITY_THRESHOLD = env.SIMILARITY_THRESHOLD;
+  private readonly MAX_THREATS = env.MAX_THREAT_DATABASE;
 
   async reportThreat(report: ThreatReport) {
-    const stored = await AsyncStorage.getItem('threat_database');
-    const threats = stored ? JSON.parse(stored) : [];
-    
-    threats.unshift({
-      ...report,
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      reportedAt: new Date().toISOString()
-    });
+    try {
+      const stored = await AsyncStorage.getItem('threat_database');
+      const threats = stored ? JSON.parse(stored) : [];
+      
+      threats.unshift({
+        ...report,
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        reportedAt: new Date().toISOString()
+      });
 
-    await AsyncStorage.setItem('threat_database', JSON.stringify(threats));
-    
-    // If it's a scammer number, store separately for quick lookup
-    if (report.number) {
-      await this.storeScammerNumber(report.number, report);
-    }
+      await AsyncStorage.setItem(
+        'threat_database', 
+        JSON.stringify(threats.slice(0, this.MAX_THREATS))
+      );
+      
+      if (report.number) {
+        await this.storeScammerNumber(report.number, report);
+      }
 
-    if (report.domain) {
-      await this.storeMaliciousDomain(report.domain, report);
+      if (report.domain) {
+        await this.storeMaliciousDomain(report.domain, report);
+      }
+    } catch (error) {
+      console.error('Error reporting threat:', error);
     }
   }
 
   async checkScammerNumber(number: string): Promise<boolean> {
-    const stored = await AsyncStorage.getItem('scammer_numbers');
-    if (!stored) return false;
-    
-    const numbers = JSON.parse(stored);
-    return numbers.some((n: any) => {
-      // Exact match
-      if (n.number === number) return true;
+    try {
+      const stored = await AsyncStorage.getItem('scammer_numbers');
+      if (!stored) return false;
       
-      // Similar number (same prefix)
-      if (number.length > 6 && n.number.startsWith(number.substring(0, 6))) {
-        return true;
-      }
-      
+      const numbers = JSON.parse(stored);
+      return numbers.some((n: any) => {
+        if (n.number === number) return true;
+        if (number.length > 6 && n.number.startsWith(number.substring(0, 6))) {
+          return true;
+        }
+        return false;
+      });
+    } catch (error) {
+      console.error('Error checking scammer number:', error);
       return false;
-    });
+    }
   }
 
   async findSimilarThreats(content: string): Promise<any[]> {
-    const stored = await AsyncStorage.getItem('threat_database');
-    if (!stored) return [];
-    
-    const threats = JSON.parse(stored);
-    const similarThreats: any[] = [];
+    try {
+      const stored = await AsyncStorage.getItem('threat_database');
+      if (!stored) return [];
+      
+      const threats = JSON.parse(stored);
+      const similarThreats: any[] = [];
 
-    threats.forEach((threat: any) => {
-      const similarity = this.calculateSimilarity(
-        content.toLowerCase(),
-        (threat.content || threat.domain || '').toLowerCase()
-      );
+      threats.forEach((threat: any) => {
+        const similarity = this.calculateSimilarity(
+          content.toLowerCase(),
+          (threat.content || threat.domain || '').toLowerCase()
+        );
 
-      if (similarity >= this.SIMILARITY_THRESHOLD) {
-        similarThreats.push({
-          ...threat,
-          similarity: similarity * 100
-        });
-      }
-    });
+        if (similarity >= this.SIMILARITY_THRESHOLD) {
+          similarThreats.push({
+            ...threat,
+            similarity: similarity * 100
+          });
+        }
+      });
 
-    return similarThreats.slice(0, 5); // Return top 5 similar threats
+      return similarThreats.slice(0, 5);
+    } catch (error) {
+      console.error('Error finding similar threats:', error);
+      return [];
+    }
   }
 
   private calculateSimilarity(str1: string, str2: string): number {
@@ -118,49 +132,133 @@ class ThreatDatabase {
   }
 
   private async storeScammerNumber(number: string, report: ThreatReport) {
-    const stored = await AsyncStorage.getItem('scammer_numbers');
-    const numbers = stored ? JSON.parse(stored) : [];
-    
-    numbers.unshift({
-      number,
-      reportCount: 1,
-      firstReported: new Date().toISOString(),
-      lastReported: new Date().toISOString(),
-      reports: [report]
-    });
+    try {
+      const stored = await AsyncStorage.getItem('scammer_numbers');
+      const numbers = stored ? JSON.parse(stored) : [];
+      
+      const existing = numbers.find((n: any) => n.number === number);
+      
+      if (existing) {
+        existing.reportCount += 1;
+        existing.lastReported = new Date().toISOString();
+        existing.reports.push(report);
+      } else {
+        numbers.unshift({
+          number,
+          reportCount: 1,
+          firstReported: new Date().toISOString(),
+          lastReported: new Date().toISOString(),
+          reports: [report]
+        });
+      }
 
-    await AsyncStorage.setItem('scammer_numbers', JSON.stringify(numbers));
+      await AsyncStorage.setItem('scammer_numbers', JSON.stringify(numbers));
+    } catch (error) {
+      console.error('Error storing scammer number:', error);
+    }
   }
 
   private async storeMaliciousDomain(domain: string, report: ThreatReport) {
-    const stored = await AsyncStorage.getItem('malicious_domains');
-    const domains = stored ? JSON.parse(stored) : [];
-    
-    domains.unshift({
-      domain,
-      riskScore: report.severity === 'high' ? 90 : 60,
-      reportCount: 1,
-      firstReported: new Date().toISOString(),
-      lastReported: new Date().toISOString()
-    });
+    try {
+      const stored = await AsyncStorage.getItem('malicious_domains');
+      const domains = stored ? JSON.parse(stored) : [];
+      
+      const existing = domains.find((d: any) => d.domain === domain);
+      
+      if (existing) {
+        existing.reportCount += 1;
+        existing.lastReported = new Date().toISOString();
+        existing.riskScore = Math.max(
+          existing.riskScore, 
+          report.severity === 'high' ? 90 : 60
+        );
+      } else {
+        domains.unshift({
+          domain,
+          riskScore: report.severity === 'high' ? 90 : 60,
+          reportCount: 1,
+          firstReported: new Date().toISOString(),
+          lastReported: new Date().toISOString()
+        });
+      }
 
-    await AsyncStorage.setItem('malicious_domains', JSON.stringify(domains));
+      await AsyncStorage.setItem('malicious_domains', JSON.stringify(domains));
+    } catch (error) {
+      console.error('Error storing malicious domain:', error);
+    }
   }
 
   async getThreatStats() {
-    const stored = await AsyncStorage.getItem('threat_database');
-    const threats = stored ? JSON.parse(stored) : [];
-    
-    return {
-      totalThreats: threats.length,
-      todayThreats: threats.filter((t: any) => {
-        const today = new Date();
-        const threatDate = new Date(t.timestamp);
-        return threatDate.toDateString() === today.toDateString();
-      }).length,
-      scammerCount: (await AsyncStorage.getItem('scammer_numbers') || '[]').length,
-      maliciousDomains: (await AsyncStorage.getItem('malicious_domains') || '[]').length
-    };
+    try {
+      const stored = await AsyncStorage.getItem('threat_database');
+      const threats = stored ? JSON.parse(stored) : [];
+      
+      const today = new Date();
+      
+      return {
+        totalThreats: threats.length,
+        todayThreats: threats.filter((t: any) => {
+          const threatDate = new Date(t.timestamp);
+          return threatDate.toDateString() === today.toDateString();
+        }).length,
+        scammerCount: (await this.getScammerCount()),
+        maliciousDomains: (await this.getMaliciousDomainCount())
+      };
+    } catch (error) {
+      console.error('Error getting threat stats:', error);
+      return {
+        totalThreats: 0,
+        todayThreats: 0,
+        scammerCount: 0,
+        maliciousDomains: 0
+      };
+    }
+  }
+
+  private async getScammerCount(): Promise<number> {
+    try {
+      const stored = await AsyncStorage.getItem('scammer_numbers');
+      return stored ? JSON.parse(stored).length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private async getMaliciousDomainCount(): Promise<number> {
+    try {
+      const stored = await AsyncStorage.getItem('malicious_domains');
+      return stored ? JSON.parse(stored).length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async clearDatabase() {
+    try {
+      await AsyncStorage.removeItem('threat_database');
+      await AsyncStorage.removeItem('scammer_numbers');
+      await AsyncStorage.removeItem('malicious_domains');
+    } catch (error) {
+      console.error('Error clearing database:', error);
+    }
+  }
+
+  async exportThreats(): Promise<any[]> {
+    try {
+      const stored = await AsyncStorage.getItem('threat_database');
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error exporting threats:', error);
+      return [];
+    }
+  }
+
+  async importThreats(threats: any[]) {
+    try {
+      await AsyncStorage.setItem('threat_database', JSON.stringify(threats));
+    } catch (error) {
+      console.error('Error importing threats:', error);
+    }
   }
 }
 
