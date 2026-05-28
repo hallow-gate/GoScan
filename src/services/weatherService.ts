@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import env from '../utils/env';
 
 interface WeatherData {
   temperature: number;
@@ -18,9 +19,22 @@ interface WeatherData {
 }
 
 class WeatherService {
-  private readonly API_KEY = 'YOUR_OPENWEATHERMAP_API_KEY'; // Free API key from openweathermap.org
+  private readonly API_KEY = env.OPENWEATHERMAP_API_KEY;
+  private readonly API_URL = env.APIs.OPENWEATHERMAP;
   
   async getCurrentWeather(): Promise<WeatherData | null> {
+    // Check if weather feature is enabled
+    if (!env.ENABLE_WEATHER) {
+      console.log('Weather feature is disabled');
+      return null;
+    }
+
+    // Check if API key is configured
+    if (!this.API_KEY || this.API_KEY === 'your_openweathermap_api_key_here') {
+      console.log('OpenWeatherMap API key not configured');
+      return null;
+    }
+
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -33,7 +47,8 @@ class WeatherService {
       });
 
       const response = await axios.get(
-        `https://api.openweathermap.org/data/3.0/onecall?lat=${location.coords.latitude}&lon=${location.coords.longitude}&appid=${this.API_KEY}&units=metric`
+        `${this.API_URL}?lat=${location.coords.latitude}&lon=${location.coords.longitude}&appid=${this.API_KEY}&units=metric`,
+        { timeout: env.API_TIMEOUT }
       );
 
       const data = response.data;
@@ -42,7 +57,7 @@ class WeatherService {
         temperature: Math.round(data.current.temp),
         condition: data.current.weather[0].main,
         humidity: data.current.humidity,
-        windSpeed: Math.round(data.current.wind_speed * 3.6), // Convert to km/h
+        windSpeed: Math.round(data.current.wind_speed * 3.6),
         uvIndex: Math.round(data.current.uvi),
         rainChance: data.hourly[0].pop * 100,
         hourly: data.hourly.slice(0, 8).map((hour: any) => ({
@@ -71,8 +86,7 @@ class WeatherService {
       const cached = await AsyncStorage.getItem('weather_data');
       if (cached) {
         const data = JSON.parse(cached);
-        // Use cache if less than 30 minutes old
-        if (Date.now() - data.timestamp < 30 * 60 * 1000) {
+        if (Date.now() - data.timestamp < env.WEATHER_CACHE_TIMEOUT) {
           return data;
         }
       }
