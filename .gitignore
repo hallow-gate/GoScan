@@ -1,18 +1,57 @@
+# Environment files
+.env
+.env.local
+.env.production
+.env.staging
+
+# Keep the example file
+!.env.example
+
+# Node modules
 node_modules/
+
+# Expo
 .expo/
 dist/
-npm-debug.*
+web-build/
+
+# Native
+android/
+ios/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.apk
+*.aab
+*.ipa
+
+# Certificates
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
-*.orig.*
-web-build/
-.env
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Logs
 *.log
-android/
-ios/
-.DS_Store
-*.apk
-*.aab
+
+# Testing
+coverage/
+
+# Temporary
+tmp/
+temp/
