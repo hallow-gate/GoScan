@@ -14,39 +14,18 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.shieldnet.secure",
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ShieldNet uses location to provide weather-based security alerts and threat intelligence.",
-        "NSLocationAlwaysUsageDescription": "ShieldNet needs location access to monitor security threats in your area."
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "build": {
+        "babel": {
+          "include": [
+            "react-native-reanimated",
+            "react-native-gesture-handler"
+          ]
+        }
       }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0a0e21"
-      },
-      "package": "com.shieldnet.secure",
-      "versionCode": 1,
-      "permissions": [
-        "RECEIVE_SMS",
-        "READ_SMS",
-        "SEND_SMS",
-        "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "ACCESS_WIFI_STATE",
-        "CHANGE_WIFI_STATE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "VIBRATE",
-        "RECEIVE_BOOT_COMPLETED",
-        "FOREGROUND_SERVICE",
-        "POST_NOTIFICATIONS",
-        "READ_PHONE_STATE",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
-      ]
     },
     "plugins": [
       [
@@ -54,27 +33,7 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow ShieldNet to access your location for weather-based security features."
         }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#3b82f6"
-        }
-      ],
-      "expo-sms"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "your-project-id-here"
-      }
-    },
-    "updates": {
-      "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/your-project-id"
-    },
-    "runtimeVersion": {
-      "policy": "sdkVersion"
-    }
+      ]
+    ]
   }
 }
