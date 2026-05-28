@@ -12,7 +12,10 @@
     "update": "eas update",
     "lint": "eslint .",
     "test": "jest",
-    "clean": "rm -rf node_modules && npm install"
+    "clean": "rm -rf node_modules && npm install",
+    "server": "node server.js",
+    "render:start": "node server.js",
+    "render:build": "npm install"
   },
   "dependencies": {
     "expo": "~50.0.14",
@@ -44,7 +47,13 @@
     "react-native-dotenv": "^3.4.11",
     "expo-constants": "~15.4.5",
     "expo-secure-store": "~12.8.1",
-    "react-native-encrypted-storage": "^4.0.3"
+    "react-native-encrypted-storage": "^4.0.3",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.2.0",
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
