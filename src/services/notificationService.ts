@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import env from '../utils/env';
 
 class NotificationService {
   private notificationListener: any;
@@ -24,16 +25,24 @@ class NotificationService {
     }
 
     if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('threats', {
-        name: 'Security Threats',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-        sound: 'default',
-        enableVibrate: true,
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-      });
+      // Use environment variables for channel configuration
+      const vibrationPattern = env.VIBRATION_PATTERN 
+        ? env.VIBRATION_PATTERN.split(',').map(Number) 
+        : [0, 250, 250, 250];
+
+      Notifications.setNotificationChannelAsync(
+        env.NOTIFICATION_CHANNEL_ID || 'threats',
+        {
+          name: env.NOTIFICATION_CHANNEL_NAME || 'Security Threats',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern,
+          lightColor: '#FF231F7C',
+          sound: 'default',
+          enableVibrate: true,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          bypassDnd: true,
+        }
+      );
 
       Notifications.setNotificationChannelAsync('alerts', {
         name: 'Security Alerts',
@@ -43,12 +52,26 @@ class NotificationService {
       });
     }
 
+    // Configure notification handler
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldVibrate: true,
+      }),
+    });
+
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received:', notification);
+      if (env.APP_DEBUG) {
+        console.log('Notification received:', notification);
+      }
     });
 
     this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification response:', response);
+      if (env.APP_DEBUG) {
+        console.log('Notification response:', response);
+      }
     });
   }
 
@@ -64,10 +87,15 @@ class NotificationService {
     category?: string;
   }) {
     try {
+      // Check if notifications are enabled in settings
       const stored = await AsyncStorage.getItem('settings');
       const settings = stored ? JSON.parse(stored) : {};
       
       if (settings.notificationsEnabled === false) return;
+
+      const channelId = category === 'threats' 
+        ? (env.NOTIFICATION_CHANNEL_ID || 'threats')
+        : 'alerts';
 
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -75,10 +103,12 @@ class NotificationService {
           body,
           data,
           sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.HIGH,
+          priority: category === 'threats' 
+            ? Notifications.AndroidNotificationPriority.HIGH
+            : Notifications.AndroidNotificationPriority.DEFAULT,
           categoryIdentifier: category,
           ...(Platform.OS === 'android' && {
-            channelId: category,
+            channelId,
             color: '#3b82f6',
             icon: './assets/adaptive-icon.png',
           }),
@@ -96,6 +126,48 @@ class NotificationService {
       body,
       category: 'threats',
     });
+  }
+
+  async scheduleReminder(title: string, body: string, seconds: number) {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: { type: 'reminder' },
+        },
+        trigger: {
+          seconds,
+          channelId: 'alerts',
+        },
+      });
+    } catch (error) {
+      console.error('Error scheduling reminder:', error);
+    }
+  }
+
+  async cancelAllNotifications() {
+    try {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    } catch (error) {
+      console.error('Error cancelling notifications:', error);
+    }
+  }
+
+  async getBadgeCount(): Promise<number> {
+    try {
+      return await Notifications.getBadgeCountAsync();
+    } catch {
+      return 0;
+    }
+  }
+
+  async setBadgeCount(count: number) {
+    try {
+      await Notifications.setBadgeCountAsync(count);
+    } catch (error) {
+      console.error('Error setting badge count:', error);
+    }
   }
 
   cleanup() {
