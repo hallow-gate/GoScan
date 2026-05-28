@@ -1,5 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import env from '../utils/env';
 
 interface URLScanResult {
   url: string;
@@ -58,28 +59,43 @@ class URLScanner {
             normalizedURL = expanded;
           }
         } catch (error) {
-          console.warn('Could not expand URL:', error);
+          if (env.APP_DEBUG) console.warn('Could not expand URL:', error);
         }
       }
 
-      // Run multiple checks
-      const [heuristicResult, safeBrowsingResult, phishTankResult, domainResult] = 
-        await Promise.allSettled([
-          this.heuristicAnalysis(normalizedURL),
-          this.checkGoogleSafeBrowsing(normalizedURL),
-          this.checkPhishTank(normalizedURL),
-          this.domainAnalysis(normalizedURL)
-        ]);
-
-      // Combine results
-      const results = [
-        heuristicResult.status === 'fulfilled' ? heuristicResult.value : { score: 0, indicators: [] },
-        safeBrowsingResult.status === 'fulfilled' ? safeBrowsingResult.value : { score: 0, indicators: [] },
-        phishTankResult.status === 'fulfilled' ? phishTankResult.value : { score: 0, indicators: [] },
-        domainResult.status === 'fulfilled' ? domainResult.value : { score: 0, indicators: [] }
+      // Run multiple checks based on available API keys
+      const checks: Promise<any>[] = [
+        this.heuristicAnalysis(normalizedURL),
       ];
 
-      const finalResult = this.aggregateResults(normalizedURL, results);
+      if (env.GOOGLE_SAFE_BROWSING_API_KEY && env.GOOGLE_SAFE_BROWSING_API_KEY !== 'your_google_safe_browsing_api_key_here') {
+        checks.push(this.checkGoogleSafeBrowsing(normalizedURL));
+      }
+
+      if (env.PHISHTANK_API_KEY && env.PHISHTANK_API_KEY !== 'your_phishtank_api_key_here') {
+        checks.push(this.checkPhishTank(normalizedURL));
+      }
+
+      if (env.URLSCAN_API_KEY && env.URLSCAN_API_KEY !== 'your_urlscan_api_key_here') {
+        checks.push(this.checkURLScanIO(normalizedURL));
+      }
+
+      if (env.VIRUSTOTAL_API_KEY && env.VIRUSTOTAL_API_KEY !== 'your_virustotal_api_key_here') {
+        checks.push(this.checkVirusTotal(normalizedURL));
+      }
+
+      checks.push(this.domainAnalysis(normalizedURL));
+
+      const results = await Promise.allSettled(checks);
+      
+      const processedResults = results.map((result) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+        return { score: 0, indicators: [] };
+      });
+
+      const finalResult = this.aggregateResults(normalizedURL, processedResults);
       
       // Cache result
       await this.storeScanResult(finalResult);
@@ -95,6 +111,122 @@ class URLScanner {
         indicators: ['Could not complete scan'],
         recommendation: 'Unable to verify URL safety. Exercise caution.'
       };
+    }
+  }
+
+  private async checkGoogleSafeBrowsing(url: string): Promise<{ score: number; indicators: string[] }> {
+    try {
+      const response = await axios.post(
+        `${env.APIs.GOOGLE_SAFE_BROWSING}?key=${env.GOOGLE_SAFE_BROWSING_API_KEY}`,
+        {
+          client: { 
+            clientId: 'shieldnet-secure', 
+            clientVersion: '1.0.0' 
+          },
+          threatInfo: {
+            threatTypes: [
+              'MALWARE', 
+              'SOCIAL_ENGINEERING', 
+              'UNWANTED_SOFTWARE', 
+              'POTENTIALLY_HARMFUL_APPLICATION'
+            ],
+            platformTypes: ['ANDROID'],
+            threatEntryTypes: ['URL'],
+            threatEntries: [{ url }]
+          }
+        },
+        { timeout: env.API_TIMEOUT }
+      );
+
+      if (response.data?.matches) {
+        return { 
+          score: 90, 
+          indicators: ['Flagged by Google Safe Browsing'] 
+        };
+      }
+      return { score: 0, indicators: [] };
+    } catch (error: any) {
+      if (error.response?.status === 429) {
+        console.warn('Google Safe Browsing API rate limit reached');
+      }
+      return { score: 0, indicators: [] };
+    }
+  }
+
+  private async checkVirusTotal(url: string): Promise<{ score: number; indicators: string[] }> {
+    try {
+      const response = await axios.get(env.APIs.VIRUSTOTAL, {
+        params: {
+          apikey: env.VIRUSTOTAL_API_KEY,
+          resource: url,
+        },
+        timeout: env.API_TIMEOUT,
+      });
+
+      if (response.data?.positives > 0) {
+        return {
+          score: Math.min(response.data.positives * 10, 100),
+          indicators: [`Detected by ${response.data.positives} security vendors`]
+        };
+      }
+      return { score: 0, indicators: [] };
+    } catch (error) {
+      return { score: 0, indicators: [] };
+    }
+  }
+
+  private async checkURLScanIO(url: string): Promise<{ score: number; indicators: string[] }> {
+    try {
+      const response = await axios.post(
+        env.APIs.URLSCAN,
+        { url, visibility: 'public' },
+        { 
+          headers: { 
+            'API-Key': env.URLSCAN_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          timeout: env.API_TIMEOUT,
+        }
+      );
+
+      if (response.data?.verdicts?.overall?.malicious) {
+        return { 
+          score: 70, 
+          indicators: ['URLScan.io detected malicious content'] 
+        };
+      }
+      return { score: 0, indicators: [] };
+    } catch (error) {
+      return { score: 0, indicators: [] };
+    }
+  }
+
+  private async checkPhishTank(url: string): Promise<{ score: number; indicators: string[] }> {
+    try {
+      const formData = new URLSearchParams();
+      formData.append('url', url);
+      formData.append('format', 'json');
+      
+      const response = await axios.post(
+        env.APIs.PHISHTANK,
+        formData,
+        { 
+          headers: { 
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: env.API_TIMEOUT,
+        }
+      );
+
+      if (response.data?.results?.in_database) {
+        return { 
+          score: 85, 
+          indicators: ['Found in PhishTank phishing database'] 
+        };
+      }
+      return { score: 0, indicators: [] };
+    } catch (error) {
+      return { score: 0, indicators: [] };
     }
   }
 
@@ -138,24 +270,10 @@ class URLScanner {
         indicators.push('URL contains @ symbol - possible credential harvesting');
       }
 
-      // Multiple hyphens
-      const hyphens = (hostname.match(/-/g) || []).length;
-      if (hyphens > 3) {
-        score += 15;
-        indicators.push(`Domain contains ${hyphens} hyphens`);
-      }
-
-      // Numbers in domain
-      const numbers = (hostname.match(/\d/g) || []).length;
-      if (numbers > 5) {
-        score += 10;
-        indicators.push('Domain contains many numbers');
-      }
-
       // Phishing keywords
       const foundKeywords = this.phishingKeywords.filter(keyword => url.includes(keyword));
       if (foundKeywords.length > 0) {
-        score += foundKeywords.length * 10;
+        score += Math.min(foundKeywords.length * 10, 50);
         indicators.push(`Contains suspicious keywords: ${foundKeywords.slice(0, 3).join(', ')}`);
       }
 
@@ -183,122 +301,78 @@ class URLScanner {
     }
   }
 
-  private async checkGoogleSafeBrowsing(url: string): Promise<{ score: number; indicators: string[] }> {
-    try {
-      // Free tier API - limited requests
-      const response = await axios.post(
-        `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=YOUR_API_KEY`,
-        {
-          client: { clientId: 'shieldnet-secure', clientVersion: '1.0.0' },
-          threatInfo: {
-            threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
-            platformTypes: ['ANDROID'],
-            threatEntryTypes: ['URL'],
-            threatEntries: [{ url }]
-          }
-        },
-        { timeout: 5000 }
-      );
-
-      if (response.data?.matches) {
-        return { 
-          score: 90, 
-          indicators: ['Flagged by Google Safe Browsing'] 
-        };
-      }
-      return { score: 0, indicators: [] };
-    } catch (error: any) {
-      if (error.response?.status === 429) {
-        console.warn('Google Safe Browsing API rate limit reached');
-      }
-      return { score: 0, indicators: [] };
-    }
-  }
-
-  private async checkPhishTank(url: string): Promise<{ score: number; indicators: string[] }> {
-    try {
-      const formData = new URLSearchParams();
-      formData.append('url', url);
-      formData.append('format', 'json');
-      
-      const response = await axios.post(
-        'https://checkurl.phishtank.com/checkurl/',
-        formData,
-        { 
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          timeout: 5000
-        }
-      );
-
-      if (response.data?.results?.in_database) {
-        return { 
-          score: 85, 
-          indicators: ['Found in PhishTank phishing database'] 
-        };
-      }
-      return { score: 0, indicators: [] };
-    } catch (error) {
-      return { score: 0, indicators: [] };
-    }
-  }
-
   private async domainAnalysis(url: string): Promise<{ score: number; indicators: string[] }> {
     try {
       const urlObj = new URL(url);
       const indicators: string[] = [];
       let score = 0;
 
-      // Check domain age using WHOIS (free API)
       try {
         const whoisResponse = await axios.get(
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.whois.com/whois/${urlObj.hostname}`)}`,
-          { timeout: 5000 }
+          `${env.APIs.WHOIS}?q=${urlObj.hostname}`,
+          { timeout: env.API_TIMEOUT }
         );
 
-        const data = whoisResponse.data as string;
-        
-        if (data.includes('Creation Date')) {
-          const creationMatch = data.match(/Creation Date: (.+)/);
-          if (creationMatch) {
-            const creationDate = new Date(creationMatch[1]);
-            const daysOld = (Date.now() - creationDate.getTime()) / (1000 * 3600 * 24);
-            
-            if (daysOld < 7) {
-              score += 45;
-              indicators.push('Domain registered within the last week');
-            } else if (daysOld < 30) {
-              score += 35;
-              indicators.push('Domain registered within the last month');
-            } else if (daysOld < 90) {
-              score += 20;
-              indicators.push('Domain registered within the last 3 months');
-            }
+        const data = whoisResponse.data;
+        if (data?.creation_date) {
+          const creationDate = new Date(data.creation_date);
+          const daysOld = (Date.now() - creationDate.getTime()) / (1000 * 3600 * 24);
+          
+          if (daysOld < 7) {
+            score += 45;
+            indicators.push('Domain registered within the last week');
+          } else if (daysOld < 30) {
+            score += 35;
+            indicators.push('Domain registered within the last month');
+          } else if (daysOld < 90) {
+            score += 20;
+            indicators.push('Domain registered within the last 3 months');
           }
         }
       } catch (whoisError) {
         // WHOIS lookup failed, skip
       }
 
-      // Check for privacy protection
-      try {
-        const dnsResponse = await axios.get(
-          `https://dns.google/resolve?name=${urlObj.hostname}&type=A`,
-          { timeout: 3000 }
-        );
-
-        if (dnsResponse.data?.Answer) {
-          const ips = dnsResponse.data.Answer.map((a: any) => a.data);
-          
-          // Check if domain resolves to known bad IPs (simplified)
-          // In production, integrate with IP reputation services
-        }
-      } catch (dnsError) {
-        // DNS lookup failed
-      }
-
       return { score, indicators };
     } catch (error) {
       return { score: 0, indicators: [] };
+    }
+  }
+
+  private isShortenedURL(url: string): boolean {
+    const shorteners = [
+      'bit.ly', 'goo.gl', 't.co', 'tinyurl.com', 'ow.ly',
+      'is.gd', 'buff.ly', 'adf.ly', 'shorte.st', 'bc.vc',
+      'tiny.cc', 'lnkd.in', 'db.tt', 'qr.ae', 'cur.lv'
+    ];
+    return shorteners.some(s => url.includes(s));
+  }
+
+  private async expandURL(shortURL: string): Promise<string> {
+    try {
+      const response = await axios.head(shortURL, {
+        maxRedirects: 0,
+        validateStatus: (status) => status >= 200 && status < 400,
+        timeout: env.API_TIMEOUT,
+      });
+
+      const location = response.headers.location;
+      if (location) {
+        if (this.isShortenedURL(location)) {
+          return this.expandURL(location);
+        }
+        return location;
+      }
+      return shortURL;
+    } catch (error: any) {
+      if (error.response?.headers?.location) {
+        const location = error.response.headers.location;
+        if (this.isShortenedURL(location)) {
+          return this.expandURL(location);
+        }
+        return location;
+      }
+      return shortURL;
     }
   }
 
@@ -343,11 +417,9 @@ class URLScanner {
         timestamp: new Date().toISOString()
       });
 
-      // Keep last 1000 scans
-      const trimmed = history.slice(0, 1000);
+      const trimmed = history.slice(0, env.MAX_SCAN_HISTORY);
       await AsyncStorage.setItem('scan_history', JSON.stringify(trimmed));
 
-      // If threat detected, add to threat database
       if (result.isThreat) {
         const threatStored = await AsyncStorage.getItem('threat_database');
         const threats = threatStored ? JSON.parse(threatStored) : [];
@@ -368,44 +440,6 @@ class URLScanner {
       }
     } catch (error) {
       console.error('Error storing scan result:', error);
-    }
-  }
-
-  private isShortenedURL(url: string): boolean {
-    const shorteners = [
-      'bit.ly', 'goo.gl', 't.co', 'tinyurl.com', 'ow.ly',
-      'is.gd', 'buff.ly', 'adf.ly', 'shorte.st', 'bc.vc',
-      'tiny.cc', 'lnkd.in', 'db.tt', 'qr.ae', 'cur.lv'
-    ];
-    return shorteners.some(s => url.includes(s));
-  }
-
-  private async expandURL(shortURL: string): Promise<string> {
-    try {
-      const response = await axios.head(shortURL, {
-        maxRedirects: 0,
-        validateStatus: (status) => status >= 200 && status < 400,
-        timeout: 5000
-      });
-
-      const location = response.headers.location;
-      if (location) {
-        // Recursively expand if still shortened
-        if (this.isShortenedURL(location)) {
-          return this.expandURL(location);
-        }
-        return location;
-      }
-      return shortURL;
-    } catch (error: any) {
-      if (error.response?.headers?.location) {
-        const location = error.response.headers.location;
-        if (this.isShortenedURL(location)) {
-          return this.expandURL(location);
-        }
-        return location;
-      }
-      return shortURL;
     }
   }
 
@@ -464,26 +498,6 @@ class URLScanner {
     }
     return 'This URL appears to be safe based on our analysis. Always practice safe browsing habits.';
   }
-
-  async getScanHistory(limit: number = 50): Promise<URLScanResult[]> {
-    try {
-      const stored = await AsyncStorage.getItem('scan_history');
-      if (stored) {
-        const history = JSON.parse(stored);
-        return history.slice(0, limit);
-      }
-    } catch (error) {
-      console.error('Error getting scan history:', error);
-    }
-    return [];
-  }
-
-  async clearHistory(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem('scan_history');
-    } catch (error) {
-      console.error('Error clearing history:', error);
-    }
-  }
 }
+
 export const urlScanner = new URLScanner();
