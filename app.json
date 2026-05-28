@@ -14,26 +14,93 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shieldnet.secure"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0e21"
+      },
+      "package": "com.shieldnet.secure",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
     "web": {
       "favicon": "./assets/favicon.png",
+      "name": "ShieldNet Secure",
+      "shortName": "ShieldNet",
+      "lang": "en",
+      "scope": "/",
+      "themeColor": "#0a0e21",
+      "backgroundColor": "#0a0e21",
+      "display": "standalone",
+      "orientation": "portrait",
       "bundler": "metro",
       "output": "single",
       "build": {
         "babel": {
           "include": [
             "react-native-reanimated",
-            "react-native-gesture-handler"
+            "react-native-gesture-handler",
+            "@react-native-async-storage/async-storage",
+            "expo-location",
+            "expo-clipboard",
+            "expo-linking",
+            "react-native-svg",
+            "expo-linear-gradient",
+            "zustand",
+            "@react-navigation/native",
+            "@react-navigation/bottom-tabs",
+            "react-native-screens",
+            "react-native-safe-area-context"
           ]
         }
+      },
+      "meta": {
+        "description": "ShieldNet Secure - Mobile Cybersecurity Application for real-time threat detection",
+        "keywords": "cybersecurity, phishing protection, URL scanner, threat detection, security",
+        "author": "ShieldNet Secure",
+        "viewport": "width=device-width, initial-scale=1, maximum-scale=1",
+        "apple-mobile-web-app-capable": "yes",
+        "apple-mobile-web-app-status-bar-style": "black-translucent",
+        "apple-mobile-web-app-title": "ShieldNet",
+        "msapplication-TileColor": "#0a0e21",
+        "msapplication-config": "/browserconfig.xml"
       }
     },
     "plugins": [
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow ShieldNet to access your location for weather-based security features."
+          "locationAlwaysAndWhenInUsePermission": "Allow ShieldNet to access your location for weather-based security features.",
+          "locationWhenInUsePermission": "Allow ShieldNet to access your location for weather-based security features."
         }
       ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id-here"
+      }
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/your-project-id",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD"
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "platforms": [
+      "ios",
+      "android",
+      "web"
     ]
   }
 }
