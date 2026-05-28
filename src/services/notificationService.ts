@@ -1,15 +1,36 @@
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
+// Web-compatible Notification Service
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import env from '../utils/env';
+
+// Only import expo-notifications on native platforms
+let Notifications: any = null;
+let Device: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    Notifications = require('expo-notifications');
+    Device = require('expo-device');
+  } catch (e) {
+    console.log('Native notification modules not available');
+  }
+}
 
 class NotificationService {
   private notificationListener: any;
   private responseListener: any;
 
   async initialize() {
-    if (Device.isDevice) {
+    if (Platform.OS === 'web') {
+      // Web notifications
+      if ('Notification' in window) {
+        const permission = await Notification.requestPermission();
+        console.log('Web notification permission:', permission);
+      }
+      return;
+    }
+
+    // Native notifications (Android/iOS)
+    if (Device && Device.isDevice) {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
       
@@ -24,25 +45,17 @@ class NotificationService {
       }
     }
 
-    if (Platform.OS === 'android') {
-      // Use environment variables for channel configuration
-      const vibrationPattern = env.VIBRATION_PATTERN 
-        ? env.VIBRATION_PATTERN.split(',').map(Number) 
-        : [0, 250, 250, 250];
-
-      Notifications.setNotificationChannelAsync(
-        env.NOTIFICATION_CHANNEL_ID || 'threats',
-        {
-          name: env.NOTIFICATION_CHANNEL_NAME || 'Security Threats',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern,
-          lightColor: '#FF231F7C',
-          sound: 'default',
-          enableVibrate: true,
-          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-          bypassDnd: true,
-        }
-      );
+    if (Platform.OS === 'android' && Notifications) {
+      Notifications.setNotificationChannelAsync('threats', {
+        name: 'Security Threats',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+        sound: 'default',
+        enableVibrate: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+      });
 
       Notifications.setNotificationChannelAsync('alerts', {
         name: 'Security Alerts',
@@ -52,27 +65,15 @@ class NotificationService {
       });
     }
 
-    // Configure notification handler
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldVibrate: true,
-      }),
-    });
-
-    this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      if (env.APP_DEBUG) {
+    if (Notifications) {
+      this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
         console.log('Notification received:', notification);
-      }
-    });
+      });
 
-    this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      if (env.APP_DEBUG) {
+      this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
         console.log('Notification response:', response);
-      }
-    });
+      });
+    }
   }
 
   async showThreatNotification({
@@ -87,34 +88,37 @@ class NotificationService {
     category?: string;
   }) {
     try {
-      // Check if notifications are enabled in settings
       const stored = await AsyncStorage.getItem('settings');
       const settings = stored ? JSON.parse(stored) : {};
       
       if (settings.notificationsEnabled === false) return;
 
-      const channelId = category === 'threats' 
-        ? (env.NOTIFICATION_CHANNEL_ID || 'threats')
-        : 'alerts';
+      if (Platform.OS === 'web') {
+        // Web notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/favicon.png' });
+        }
+        return;
+      }
 
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data,
-          sound: 'default',
-          priority: category === 'threats' 
-            ? Notifications.AndroidNotificationPriority.HIGH
-            : Notifications.AndroidNotificationPriority.DEFAULT,
-          categoryIdentifier: category,
-          ...(Platform.OS === 'android' && {
-            channelId,
-            color: '#3b82f6',
-            icon: './assets/adaptive-icon.png',
-          }),
-        },
-        trigger: null, // Immediate notification
-      });
+      // Native notification
+      if (Notifications) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title,
+            body,
+            data,
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            categoryIdentifier: category,
+            ...(Platform.OS === 'android' && {
+              channelId: category,
+              color: '#3b82f6',
+            }),
+          },
+          trigger: null,
+        });
+      }
     } catch (error) {
       console.error('Error showing notification:', error);
     }
@@ -128,53 +132,11 @@ class NotificationService {
     });
   }
 
-  async scheduleReminder(title: string, body: string, seconds: number) {
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data: { type: 'reminder' },
-        },
-        trigger: {
-          seconds,
-          channelId: 'alerts',
-        },
-      });
-    } catch (error) {
-      console.error('Error scheduling reminder:', error);
-    }
-  }
-
-  async cancelAllNotifications() {
-    try {
-      await Notifications.cancelAllScheduledNotificationsAsync();
-    } catch (error) {
-      console.error('Error cancelling notifications:', error);
-    }
-  }
-
-  async getBadgeCount(): Promise<number> {
-    try {
-      return await Notifications.getBadgeCountAsync();
-    } catch {
-      return 0;
-    }
-  }
-
-  async setBadgeCount(count: number) {
-    try {
-      await Notifications.setBadgeCountAsync(count);
-    } catch (error) {
-      console.error('Error setting badge count:', error);
-    }
-  }
-
   cleanup() {
-    if (this.notificationListener) {
+    if (this.notificationListener && Notifications) {
       Notifications.removeNotificationSubscription(this.notificationListener);
     }
-    if (this.responseListener) {
+    if (this.responseListener && Notifications) {
       Notifications.removeNotificationSubscription(this.responseListener);
     }
   }
